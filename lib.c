@@ -29,7 +29,7 @@ int bind_inet_socket(uint16_t port, int type, int active)
     addr.sin_addr.s_addr = htonl(INADDR_ANY);
     if (setsockopt(socketfd, SOL_SOCKET, SO_REUSEADDR, &t, sizeof(t))) ERR("setsockopt");
     if (bind(socketfd, (struct sockaddr *) &addr, sizeof(addr)) < 0)  ERR("bind");
-    if (SOCK_STREAM == type&&active==0)
+    if (SOCK_STREAM == type && active == 0)
         if (listen(socketfd, 100) < 0) ERR("listen");
     return socketfd;
 }
@@ -62,10 +62,39 @@ int port_from_args(int argc, char const *argv[])
     }
 }
 
-char* addrtostr(struct sockaddr_in addr, char* buf, size_t size)
-{   
+char *addrtostr(struct sockaddr_in addr, char *buf, size_t size)
+{
     char address[20];
     inet_ntop(AF_INET, &(addr.sin_addr), address, 20);
-    snprintf(buf, size,"%s:%d", address, ntohs(addr.sin_port));
+    snprintf(buf, size, "%s:%d", address, ntohs(addr.sin_port));
     return buf;
+}
+
+void print_log(char *name, const char *format, ... )
+{
+    va_list arglist;
+    char buf[50];
+    sprintf(buf, "%s.txt", name);
+    FILE *f = fopen(buf, "a+");
+    if (f == NULL)
+    {
+        printf("LOG: Error opening file!\n");
+        exit(1);
+    }
+
+    /* Getting time */
+    time_t t = time(NULL);
+    struct tm tm = *localtime(&t);
+    timespec ts;
+    clock_gettime(CLOCK_REALTIME, &ts);
+
+    fprintf(f, "[%d](%d:%d:%d.%d): ", getpid(), tm.tm_hour, tm.tm_min, tm.tm_sec, (ts.tv_nsec / 1000));
+
+    va_start(arglist, format);
+    vfprintf(f, format, arglist);
+    va_end(arglist);
+
+    fprintf(f, "\n");
+
+    fclose(f);
 }

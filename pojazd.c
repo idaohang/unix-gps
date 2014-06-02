@@ -18,6 +18,10 @@ void *move_worker(void *arg)
         PTHREAD_MUTEX_LOCK_ERR(&mutex);
         pos[0] += randb(-2, 2);
         pos[1] += randb(-2, 2);
+
+        /* Synchronize this */
+        printf("%d, %d\n",pos[0],pos[1]);
+        
         PTHREAD_MUTEX_UNLOCK_ERR(&mutex);
     }
 }
