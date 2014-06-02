@@ -26,6 +26,10 @@
 #define MIN_LONGITUDE -18000
 #define MAX_LONGITUDE 18000
 
+#define COMM_REGISTER 1
+#define COMM_REMOVE 2
+//TODO MORE
+
 int sethandler(void (*f)(int), int sigNo);
 int make_socket(int domain, int type);
 int bind_inet_socket(uint16_t port, int type, int active);
