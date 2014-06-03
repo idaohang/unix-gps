@@ -35,6 +35,10 @@
 #define COMM_REQ_COMPUTE 4
 #define COMM_GET_COMPUTE 5
 
+/* Max int count in message */
+#define MAX_MESSAGE_LENGTH 1000
+
+#define UINT32_S sizeof(int32_t)
 
 int sethandler(void (*f)(int), int sigNo);
 int make_socket(int domain, int type);
@@ -43,3 +47,4 @@ int randb(int min, int max);
 int port_from_args(int argc, char const *argv[]);
 char *addrtostr(struct sockaddr_in addr, char *buf, size_t size);
 void print_log(char *name, const char *format, ... );
+void close_conn(int socket);

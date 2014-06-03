@@ -65,11 +65,8 @@ int main(int argc, char const *argv[])
         printf("Connection accepted!\n");
         prepare_packet(buf);
         write(client, buf, sizeof(buf));
-        shutdown(client, SHUT_WR);
-        int i=0;
-        while(recv(client, NULL, 0, 0)!=0) 
-            i++;
-        printf("Sent successfully. Loop count: %d\n", i);
+        close_conn(client);
+        printf("Sent successfully.");
         close(client);
 
     }

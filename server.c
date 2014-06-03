@@ -1,6 +1,7 @@
 #include "lib.h"
 #define MAX_VEHICLES 100
 #define CHECKUP_INTERVAL 3
+#define LOG "server"
 
 struct sockaddr_in veh[MAX_VEHICLES];
 pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
@@ -46,10 +47,93 @@ void usage()
     printf("Usage: ./server [port]\n");
 }
 
+/* MESSAGE HANDLERS */
+
+void comm_register_handler(int client, uint32_t *msg, uint32_t length)
+{
+
+}
+
+void comm_remove_handler(int client, uint32_t *msg, uint32_t length)
+{
+
+}
+
+void comm_get_log_handler(int client, uint32_t *msg, uint32_t length)
+{
+
+}
+
+void comm_req_compute_handler(int client, uint32_t *msg, uint32_t length)
+{
+
+}
+
+void comm_get_compute_handler(int client, uint32_t *msg, uint32_t length)
+{
+
+}
+/* END OF MESSAGE HANDLERS */
+
+void handle_msg(int client, uint32_t *msg, uint32_t length)
+{
+    uint32_t type = ntohl(msg[1]);
+    switch (type)
+    {
+    case COMM_REGISTER:
+        comm_register_handler(client, msg, length);
+        break;
+    case COMM_REMOVE:
+        comm_remove_handler(client, msg, length);
+        break;
+    case COMM_GET_LOG:
+        comm_get_log_handler(client, msg, length);
+        break;
+    case COMM_REQ_COMPUTE:
+        comm_req_compute_handler(client, msg, length);
+        break;
+    case COMM_GET_COMPUTE:
+        comm_get_compute_handler(client, msg, length);
+        break;
+    default:
+        print_log(LOG, "Unknown message type: %d", type);
+        break;
+    }
+}
+
+void do_work(int socket)
+{
+    int client;
+    uint32_t buf[MAX_MESSAGE_LENGTH];
+    uint32_t length;
+
+    for (;;)
+    {
+        client = accept(socket, NULL, NULL);
+        read(client, (uint32_t*)&buf, UINT32_S);
+        length = ntohl(buf[0]);
+        if (length > 1 && length <= MAX_MESSAGE_LENGTH)
+        {
+            uint32_t to_read = (length - 1) * UINT32_S;
+            uint32_t bytes_read;
+            if (to_read != (bytes_read = read(client, (&buf) + 1, to_read)))
+                print_log(LOG, "ERR truncated message, read %d of %d",
+                          bytes_read, to_read);
+            else
+                handle_msg(client, buf, length);
+
+        }
+        else
+        {
+            print_log(LOG, "WARN Got message of invalid legth %d", length);
+        }
+        close_conn(client);
+    }
+}
+
 int main(int argc, char const *argv[])
 {
-    int port, socket, client;
-    struct sockaddr addr;
+    int port, socket;
     pthread_t checkup;
 
     if ((port = port_from_args(argc, argv)) < 0)
@@ -67,10 +151,7 @@ int main(int argc, char const *argv[])
 
     socket = bind_inet_socket(port, SOCK_STREAM, 0);
 
-    for(;;)
-    {
-        client=accept(socket, &addr, sizeof(addr));
-    }
+    do_work(socket);
 
     return 0;
 }

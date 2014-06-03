@@ -85,10 +85,11 @@ void print_log(char *name, const char *format, ... )
     /* Getting time */
     time_t t = time(NULL);
     struct tm tm = *localtime(&t);
-    timespec ts;
-    clock_gettime(CLOCK_REALTIME, &ts);
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
 
-    fprintf(f, "[%d](%d:%d:%d.%d): ", getpid(), tm.tm_hour, tm.tm_min, tm.tm_sec, (ts.tv_nsec / 1000));
+    fprintf(f, "[%d](%d:%d:%d.%ld): ", getpid(), tm.tm_hour, tm.tm_min,
+            tm.tm_sec, (tv.tv_usec / 1000));
 
     va_start(arglist, format);
     vfprintf(f, format, arglist);
@@ -97,4 +98,10 @@ void print_log(char *name, const char *format, ... )
     fprintf(f, "\n");
 
     fclose(f);
+}
+
+void close_conn(int socket)
+{
+    shutdown(socket, SHUT_WR);
+    while(read(socket, NULL, 0)!=0); 
 }
