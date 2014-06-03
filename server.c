@@ -2,6 +2,7 @@
 #define MAX_VEHICLES 100
 #define CHECKUP_INTERVAL 3
 #define LOG "server"
+#define MSG_DISP_CHARS 50
 
 struct sockaddr_in veh[MAX_VEHICLES];
 pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
@@ -78,6 +79,10 @@ void comm_get_compute_handler(int client, uint32_t *msg, uint32_t length)
 void handle_msg(int client, uint32_t *msg, uint32_t length)
 {
     uint32_t type = ntohl(msg[1]);
+
+    char str[MSG_DISP_CHARS];
+    sprintmsg(str, MSG_DISP_CHARS, msg, 8);
+    printf("Received message: %s\n", str);
     switch (type)
     {
     case COMM_REGISTER:

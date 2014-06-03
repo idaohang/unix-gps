@@ -105,3 +105,21 @@ void close_conn(int socket)
     shutdown(socket, SHUT_WR);
     while(read(socket, NULL, 0)!=0); 
 }
+
+/* Message field bytes should be in network order. */
+int sprintmsg(char *str, size_t size, uint32_t *msg, uint32_t count)
+{
+    if(msg==NULL)
+        return GPS_ERR_GENERIC;
+    uint32_t len=ntohl(msg[0]);
+    if(len<1 || len>MAX_MESSAGE_LENGTH)
+        return GPS_ERR_INVALID_MSG;
+    if(len<count)
+        count=len;
+
+    int i, cur=0;
+    for(i=0;i<count;i++)
+        cur=snprintf(str+cur, size-cur, "%u:", msg[i]);
+    snprintf(str+cur, size-cur, "...");
+    return 0;
+}

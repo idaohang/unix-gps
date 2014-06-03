@@ -35,6 +35,10 @@
 #define COMM_REQ_COMPUTE 4
 #define COMM_GET_COMPUTE 5
 
+/* Error codes */
+#define GPS_ERR_GENERIC -1
+#define GPS_ERR_INVALID_MSG -2
+
 /* Max int count in message */
 #define MAX_MESSAGE_LENGTH 1000
 
@@ -48,3 +52,4 @@ int port_from_args(int argc, char const *argv[]);
 char *addrtostr(struct sockaddr_in addr, char *buf, size_t size);
 void print_log(char *name, const char *format, ... );
 void close_conn(int socket);
+int sprintmsg(char *str, size_t size, uint32_t *msg, uint32_t count);
