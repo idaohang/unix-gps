@@ -103,23 +103,78 @@ void print_log(char *name, const char *format, ... )
 void close_conn(int socket)
 {
     shutdown(socket, SHUT_WR);
-    while(read(socket, NULL, 0)!=0); 
+    while (read(socket, NULL, 0) != 0);
 }
 
 /* Message field bytes should be in network order. */
 int sprintmsg(char *str, size_t size, uint32_t *msg, uint32_t count)
 {
-    if(msg==NULL)
+    if (msg == NULL)
         return GPS_ERR_GENERIC;
-    uint32_t len=ntohl(msg[0]);
-    if(len<1 || len>MAX_MESSAGE_LENGTH)
+    uint32_t len = ntohl(msg[0]);
+    if (len < 1 || len > MAX_MESSAGE_LENGTH)
         return GPS_ERR_INVALID_MSG;
-    if(len<count)
-        count=len;
+    if (len < count)
+        count = len;
+    if (count > MAX_MESSAGE_LENGTH)
+        count = MAX_MESSAGE_LENGTH;
 
-    int i, cur=0;
-    for(i=0;i<count;i++)
-        cur=snprintf(str+cur, size-cur, "%u:", msg[i]);
-    snprintf(str+cur, size-cur, "...");
+    int i, cur = 0;
+    for (i = 0; i < count; i++)
+        cur += snprintf(str + cur, size - cur, "%" PRIu32 ":", ntohl(msg[i]));
+    if(len>count)
+        snprintf(str + cur, size - cur, "...");
     return 0;
+}
+
+/* Converts ddd.ddd.ddd.ddd:port to sockaddr */
+struct sockaddr_in ip_to_sockaddr(const char *address, size_t size)
+{
+    struct sockaddr_in ret;
+    char *ip = malloc(size);
+    char port_str[6];
+    uint16_t port;
+
+    strncpy(ip, address, size);
+    char *delim = strtok(ip, ":");
+    delim=strtok(NULL, ":");
+    strncpy(port_str, delim, 6);
+    sscanf(port_str, "%" SCNu16 "", &port);
+
+    memset(&ret, 0, sizeof(struct sockaddr_in));
+    ret.sin_family = AF_INET;
+    ret.sin_port = htons(port);
+    inet_aton(ip, &(ret.sin_addr));
+    free(ip);
+    return ret;
+}
+
+/* Converts sockaddr to ddd.ddd.ddd.ddd:port */
+void sockaddr_to_ip(char *str, size_t size, struct sockaddr_in address)
+{
+    char *ip = inet_ntoa(address.sin_addr);
+    snprintf(str, size, "%s:%" PRIu16 "", ip, ntohs(address.sin_port));
+
+    return;
+}
+
+int sockaddr_cmp(struct sockaddr_in a, struct sockaddr_in b)
+{
+    if(a.sin_family==b.sin_family &&
+        a.sin_port==b.sin_port &&
+        a.sin_addr.s_addr==b.sin_addr.s_addr&&
+        memcmp(a.sin_zero, b.sin_zero, 8)==0)
+        return 0;
+    else
+        return -1;
+}
+
+struct sockaddr_in sockaddr_create(uint32_t ip, uint16_t port)
+{
+    struct sockaddr_in ret;
+    memset(&ret, 0, sizeof(ret));
+    ret.sin_family=AF_INET;
+    ret.sin_port=port;
+    ret.sin_addr.s_addr=ip;
+    return ret;
 }

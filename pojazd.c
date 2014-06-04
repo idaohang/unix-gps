@@ -66,7 +66,7 @@ int main(int argc, char const *argv[])
         prepare_packet(buf);
         write(client, buf, sizeof(buf));
         close_conn(client);
-        printf("Sent successfully.");
+        printf("Sent successfully.\n");
         close(client);
 
     }
