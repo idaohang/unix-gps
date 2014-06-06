@@ -8,7 +8,7 @@ void usage(int argc, char const *argv[])
     fprintf(stderr, "    rm <address> - remove a vehicle\n");
     fprintf(stderr, "    log <address> - get vehicle log\n");
     fprintf(stderr, "    comp - compute which vehicle has longest route\n");
-    fprintf(stderr, "    get - get computations result or status\n");
+    fprintf(stderr, "    get <token> - get computations result or status\n");
     fprintf(stderr, "\n");
     fprintf(stderr, "Type IP addresses in aaa.bbb.ccc.ddd:port form.\n");
 }
@@ -56,6 +56,7 @@ int main(int argc, char const *argv[])
 
     uint32_t msg[MAX_MESSAGE_LENGTH];
     uint32_t response[MAX_MESSAGE_LENGTH];
+    uint32_t temp;
 
     /* Parse the command */
     if (strcmp(command, "reg") == 0)
@@ -99,8 +100,9 @@ int main(int argc, char const *argv[])
     {
         /* Get computation result */
 
-    	msg[0]=htonl(2);
+    	msg[0]=htonl(3);
     	msg[1]=htonl(COMM_GET_COMPUTE);
+        msg[2]=htonl((uint32_t)atoi(argv[2]));
     }
     else
     {
@@ -142,6 +144,16 @@ int main(int argc, char const *argv[])
 		break;
 		case COMM_FULL:
 		printf("Can't register, full house.\n");
+        break;
+        case COMM_COMPUTATIONS_FULL:
+        printf("Computations service at full load, try again later.\n");
+        break;
+        case COMM_COMPUTATION_TOKEN:
+        temp=ntohl(response[2]);
+        printf("Computation request posted successfully!\n");
+        printf("Your token is: %" PRIu32 "\n", temp);
+        printf("Please use this token to retrieve your result.\n");
+        break;
 		default:
 		sprintmsg(msg_str, 200, response, 10);
 		printf("Got unrecognized message.\n"

@@ -30,8 +30,8 @@ void prepare_packet(uint32_t *buf)
 {
     PTHREAD_MUTEX_LOCK_ERR(&mutex);
     buf[0]=htonl(3);
-    buf[1]=htonl(pos[0]+MIN_LATITUDE);
-    buf[2]=htonl(pos[1]+MIN_LONGITUDE);
+    buf[1]=htonl(pos[0]-MIN_LATITUDE);
+    buf[2]=htonl(pos[1]-MIN_LONGITUDE);
     PTHREAD_MUTEX_UNLOCK_ERR(&mutex);
 }
 

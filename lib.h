@@ -14,6 +14,8 @@
 #include <stdarg.h>
 #include <inttypes.h>
 #include <assert.h>
+#include <sys/stat.h>
+#include <sys/types.h>
 
 #define ERR(source) (fprintf(stderr,"%s:%d\n",__FILE__,__LINE__),\
                      perror(source),kill(0,SIGKILL),\
@@ -48,6 +50,8 @@
 #define COMM_LOG 12
 #define COMM_NO_COMPUTATION 13
 #define COMM_FULL 14
+#define COMM_COMPUTATIONS_FULL 15
+#define COMM_COMPUTATION_TOKEN 16
 
 
 /* Error codes */

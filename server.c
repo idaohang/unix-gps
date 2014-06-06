@@ -1,20 +1,34 @@
 #include "lib.h"
 #define MAX_VEHICLES 100
+#define MAX_COMPUTATIONS 100
 #define CHECKUP_INTERVAL 3
-#define LOG "server"
+#define LOG_NAME "server"
+#define LOG_DIR "logs"
+#define LOG_SEPARATOR ":"
 #define MSG_DISP_LEN 100
+#define PATH_LEN 50
 
 struct sockaddr_in veh[MAX_VEHICLES];
 pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t log_mutexes[MAX_VEHICLES];
+
+pthread_t comps[MAX_COMPUTATIONS];
+
+typedef struct _comp_result
+{
+    struct sockaddr_in veh;
+    uint32_t distance;
+} comp_result;
 
 void *checkup_worker(void *arg)
 {
-    int i, j, sock;
+    int i, j, sock, lat, lng;
+    FILE *logfile;
     struct sockaddr_in copy_veh[MAX_VEHICLES];
     struct sockaddr_in zero_veh;
     socklen_t length = sizeof(struct sockaddr_in);
     uint32_t buf[3];
-    char addr_str[ADDR_STR_LEN];
+    char addr_str[ADDR_STR_LEN], path[PATH_LEN];
 
     memset(&zero_veh, 0, length);
 
@@ -39,8 +53,22 @@ void *checkup_worker(void *arg)
                 close(sock);
                 for (j = 0; j < 3; j++)
                     buf[j] = ntohl(buf[j]);
-                printf("Coords retrieved: %" PRIu32 ", %" PRIu32 "\n", buf[1], buf[2]);
-                //TODO logging coords to file
+                lat=buf[1]+MIN_LATITUDE;
+                lng=buf[2]+MIN_LONGITUDE;
+
+                /* Append to log */
+                if(mkdir(LOG_DIR, S_IRWXU|S_IRWXG|S_IRWXO)!=0)
+                    if(errno!=EEXIST)
+                        ERR("mkdir " LOG_DIR);
+                snprintf(path, PATH_LEN, LOG_DIR "/%s", addr_str);
+                PTHREAD_MUTEX_LOCK_ERR(&log_mutexes[i]);
+                if((logfile=fopen(path, "a"))==NULL)
+                    ERR("fopen"); //TODO handle errors properly
+                fprintf(logfile, "%d" LOG_SEPARATOR "%d\n", lat,lng);
+                fclose(logfile);
+                PTHREAD_MUTEX_UNLOCK_ERR(&log_mutexes[i]);
+
+                printf("Coords retrieved: %d, %d", lat, lng);
             }
         }
         printf("Going to sleep...\n");
@@ -199,6 +227,18 @@ void do_work(int socket)
     }
 }
 
+
+
+void init_mutexes()
+{
+    int i;
+    for(i=0; i<MAX_VEHICLES; i++)
+    {
+        pthread_mutex_init(&(log_mutexes[i]),NULL);
+    }
+    return;
+}
+
 int main(int argc, char const *argv[])
 {
     int port, socket;
@@ -213,7 +253,7 @@ int main(int argc, char const *argv[])
         return -1;
     }
     memset(veh, 0, sizeof(struct sockaddr_in)*MAX_VEHICLES);
-
+    init_mutexes();
     pthread_create(&checkup, NULL, checkup_worker, NULL);
 
     printf("Binding socket on port %d...\n", port);
