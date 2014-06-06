@@ -13,6 +13,24 @@ void usage(int argc, char const *argv[])
     fprintf(stderr, "Type IP addresses in aaa.bbb.ccc.ddd:port form.\n");
 }
 
+int print_log_msg(uint32_t *response)
+{
+    int count=ntohl(response[0]);
+    if(count>MAX_MESSAGE_LENGTH)
+    {
+        fprintf(stderr, "Invalid message length: %d\n", count);
+        return -1;
+    }
+    int lat, lng, i;
+    for(i=2; i<count; i+=2)
+    {
+        lat=MIN_LATITUDE+ntohl(response[i]);
+        lng=MIN_LONGITUDE+ntohl(response[i+1]);
+        printf("LAT: %d LNG: %d\n",lat,lng);
+    }
+    return (i-2)/2;
+}
+
 int send_and_recv(int sock, struct sockaddr_in addr, uint32_t *msg, uint32_t *response)
 {
     uint32_t count = ntohl(msg[0]);
@@ -135,11 +153,11 @@ int main(int argc, char const *argv[])
 		printf("Vehicle not registered.\n");
 		break;
 		case COMM_LOG:
-		printf("Got log.\n");
-		//TODO print log
+		printf("Got log:\n");
+		print_log_msg(response);
 		break;
 		case COMM_NO_COMPUTATION:
-		printf("No computation was requested or somebody"
+		printf("No computation with this token or somebody"
 			"already retrieved the result.\n");
 		break;
 		case COMM_FULL:

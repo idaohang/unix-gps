@@ -6,6 +6,7 @@
 #define LOG_DIR "logs"
 #define LOG_SEPARATOR ":"
 #define MSG_DISP_LEN 100
+#define LOG_LINE_LEN 20
 #define PATH_LEN 50
 
 struct sockaddr_in veh[MAX_VEHICLES];
@@ -20,6 +21,56 @@ typedef struct _comp_result
     uint32_t distance;
 } comp_result;
 
+int search_veh(struct sockaddr_in v)
+{
+    int i;
+    for (i = 0; i < MAX_VEHICLES; i++)
+        if (sockaddr_cmp(v, veh[i]) == 0)
+            return i;
+    return -1;
+}
+
+FILE *open_log(int index, const char *mode)
+{
+    if(index>=MAX_VEHICLES)
+    {
+        fprintf(stderr, "Tried to access invalid index %d\n", index);
+        ERR("");
+    }
+
+    FILE *ret;
+    char path[PATH_LEN];
+    char addr_str[ADDR_STR_LEN];
+    if (mkdir(LOG_DIR, S_IRWXU | S_IRWXG | S_IRWXO) != 0)
+        if (errno != EEXIST)
+            ERR("mkdir " LOG_DIR);
+    PTHREAD_MUTEX_LOCK_ERR(&mutex);
+    sockaddr_to_ip(addr_str,ADDR_STR_LEN, veh[index]);
+    PTHREAD_MUTEX_UNLOCK_ERR(&mutex);
+    snprintf(path, PATH_LEN, LOG_DIR "/%s", addr_str);
+    PTHREAD_MUTEX_LOCK_ERR(&log_mutexes[index]);
+    if((ret=fopen(path, mode))==NULL)
+    {
+        //TODO handle errors properly
+        //DEBUG
+        fprintf(stderr, "Trying to open path %s failed\n", path);
+        //DEBUG
+        PTHREAD_MUTEX_UNLOCK_ERR(&log_mutexes[index]);
+        return NULL;
+    }
+    else
+    {
+        return ret;
+    }
+}
+
+int close_log(FILE *f, int index)
+{
+    fclose(f);
+    PTHREAD_MUTEX_UNLOCK_ERR(&log_mutexes[index]);
+    return 0;
+}
+
 void *checkup_worker(void *arg)
 {
     int i, j, sock, lat, lng;
@@ -28,7 +79,7 @@ void *checkup_worker(void *arg)
     struct sockaddr_in zero_veh;
     socklen_t length = sizeof(struct sockaddr_in);
     uint32_t buf[3];
-    char addr_str[ADDR_STR_LEN], path[PATH_LEN];
+    char addr_str[ADDR_STR_LEN];
 
     memset(&zero_veh, 0, length);
 
@@ -53,22 +104,16 @@ void *checkup_worker(void *arg)
                 close(sock);
                 for (j = 0; j < 3; j++)
                     buf[j] = ntohl(buf[j]);
-                lat=buf[1]+MIN_LATITUDE;
-                lng=buf[2]+MIN_LONGITUDE;
+                lat = buf[1] + MIN_LATITUDE;
+                lng = buf[2] + MIN_LONGITUDE;
 
                 /* Append to log */
-                if(mkdir(LOG_DIR, S_IRWXU|S_IRWXG|S_IRWXO)!=0)
-                    if(errno!=EEXIST)
-                        ERR("mkdir " LOG_DIR);
-                snprintf(path, PATH_LEN, LOG_DIR "/%s", addr_str);
-                PTHREAD_MUTEX_LOCK_ERR(&log_mutexes[i]);
-                if((logfile=fopen(path, "a"))==NULL)
-                    ERR("fopen"); //TODO handle errors properly
-                fprintf(logfile, "%d" LOG_SEPARATOR "%d\n", lat,lng);
-                fclose(logfile);
-                PTHREAD_MUTEX_UNLOCK_ERR(&log_mutexes[i]);
+                if ((logfile = open_log(i,"a")) == NULL)
+                    ERR("open_log"); //TODO handle errors properly
+                fprintf(logfile, "%d" LOG_SEPARATOR "%d\n", lat, lng);
+                close_log(logfile, i);
 
-                printf("Coords retrieved: %d, %d", lat, lng);
+                printf("Coords retrieved: %d, %d\n", lat, lng);
             }
         }
         printf("Going to sleep...\n");
@@ -82,6 +127,7 @@ void usage()
 
 /* MESSAGE HANDLERS */
 
+//TODO add resetting the log file here
 int comm_register_handler(uint32_t *msg, uint32_t *response)
 {
     printf("Got register request\n");
@@ -122,11 +168,9 @@ int comm_remove_handler(uint32_t *msg, uint32_t *response)
     struct sockaddr_in veh_addr = sockaddr_create(
                                       msg[2], (uint16_t)msg[3]);
 
+    int i;
     PTHREAD_MUTEX_LOCK_ERR(&mutex);
-    int i = 0;
-    while (sockaddr_cmp(veh[i], veh_addr) != 0 && i < MAX_VEHICLES)
-        i++;
-    if (i == MAX_VEHICLES)
+    if ((i = search_veh(veh_addr)) == -1)
     {
         response[1] = htonl(COMM_VEH_NEXISTS);
     }
@@ -142,6 +186,37 @@ int comm_remove_handler(uint32_t *msg, uint32_t *response)
 int comm_get_log_handler(uint32_t *msg, uint32_t *response)
 {
     printf("Got log request\n");
+    struct sockaddr_in veh_addr = sockaddr_create(
+                                      msg[2], (uint16_t)msg[3]);
+    int i, pos, lat, lng;
+    char line[LOG_LINE_LEN];
+    if ((i = search_veh(veh_addr)) == -1)
+    {
+        response[1] = htonl(COMM_VEH_NEXISTS);
+    }
+    else
+    {
+        FILE *logfile;
+        if((logfile=open_log(i,"r"))==NULL)
+        {
+            response[1]=htonl(COMM_FAILURE);
+        }else
+        {
+            //TODO handle logs longer than msg
+            pos=2;
+            while(pos<MAX_MESSAGE_LENGTH-1&&
+                (fgets(line, LOG_LINE_LEN, logfile)!=NULL))
+            {
+                sscanf(line, "%d" LOG_SEPARATOR "%d", &lat, &lng);
+                response[pos]=htonl(lat-MIN_LATITUDE);
+                response[pos+1]=htonl(lng-MIN_LONGITUDE);
+                pos+=2;
+            }
+            close_log(logfile, i);
+            response[0]=htonl(pos);
+            response[1]=htonl(COMM_LOG);
+        }
+    }
     return 0;
 }
 
@@ -220,7 +295,7 @@ void do_work(int socket)
             printf("WARN Got message of invalid length %d", length);
         }
         printf("Responding\n");
-        length=ntohl(response[0]);
+        length = ntohl(response[0]);
         write(client, response, length * UINT32_S);
         close_conn(client);
         printf("End of connection\n");
@@ -232,9 +307,9 @@ void do_work(int socket)
 void init_mutexes()
 {
     int i;
-    for(i=0; i<MAX_VEHICLES; i++)
+    for (i = 0; i < MAX_VEHICLES; i++)
     {
-        pthread_mutex_init(&(log_mutexes[i]),NULL);
+        pthread_mutex_init(&(log_mutexes[i]), NULL);
     }
     return;
 }
