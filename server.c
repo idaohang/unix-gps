@@ -1,4 +1,5 @@
 #include "lib.h"
+#include <math.h>
 #define MAX_VEHICLES 100
 #define MAX_COMPUTATIONS 100
 #define CHECKUP_INTERVAL 3
@@ -11,15 +12,18 @@
 
 struct sockaddr_in veh[MAX_VEHICLES];
 pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
+
 pthread_mutex_t log_mutexes[MAX_VEHICLES];
 
 pthread_t comps[MAX_COMPUTATIONS];
+bool comp_slots[MAX_COMPUTATIONS];
 
-typedef struct _comp_result
+
+struct comp_result
 {
     struct sockaddr_in veh;
-    uint32_t distance;
-} comp_result;
+    double distance;
+};
 
 int search_veh(struct sockaddr_in v)
 {
@@ -29,6 +33,8 @@ int search_veh(struct sockaddr_in v)
             return i;
     return -1;
 }
+
+
 
 FILE *open_log(int index, const char *mode)
 {
@@ -51,10 +57,6 @@ FILE *open_log(int index, const char *mode)
     PTHREAD_MUTEX_LOCK_ERR(&log_mutexes[index]);
     if((ret=fopen(path, mode))==NULL)
     {
-        //TODO handle errors properly
-        //DEBUG
-        fprintf(stderr, "Trying to open path %s failed\n", path);
-        //DEBUG
         PTHREAD_MUTEX_UNLOCK_ERR(&log_mutexes[index]);
         return NULL;
     }
@@ -71,6 +73,63 @@ int close_log(FILE *f, int index)
     return 0;
 }
 
+void *compute_worker(void *arg)
+{
+    struct comp_result *ret=malloc(sizeof(struct comp_result));
+    memset(&ret, 0, sizeof(ret));
+    struct sockaddr_in copy_veh[MAX_VEHICLES];
+    struct sockaddr_in zero_veh;
+    memset(&zero_veh, 0, sizeof(ret));
+    int length=sizeof(struct sockaddr_in);
+
+    /* Create a local copy of the vehicle table */
+    PTHREAD_MUTEX_LOCK_ERR(&mutex);
+    memcpy(copy_veh, veh, length * MAX_VEHICLES);
+    PTHREAD_MUTEX_UNLOCK_ERR(&mutex);
+
+    /* Iterate through the table */
+    int i, lat, lng;
+    char line[LOG_LINE_LEN];
+    for(i=0; i<MAX_VEHICLES; i++)
+    {
+        if(sockaddr_cmp(copy_veh[i], zero_veh)!=0)
+        {
+            FILE *f=open_log(i, "r");
+            if(f==NULL)
+            {
+                if(errno==ENOENT)
+                {
+                    /* The vehicle was probably removed
+                       in the meantime */
+                    continue;
+                }
+                else
+                    return NULL;
+            }
+            double curr_distance=0;
+            int lat_last=0, lng_last=0;
+
+            /* Process the vehicle log */
+            if(fgets(line, LOG_LINE_LEN, f)==NULL)
+                continue;
+            sscanf(line, "%d" LOG_SEPARATOR "%d", &lat_last, &lng_last);
+            while(fgets(line, LOG_LINE_LEN, f)!=NULL)
+            {
+                sscanf(line, "%d" LOG_SEPARATOR "%d", &lat, &lng);
+                curr_distance+=sqrt(pow(lat-lat_last,2)+pow(lng-lng_last,2));
+            }
+            close_log(f,i);
+            if(curr_distance>ret->distance)
+            {
+                ret->distance=curr_distance;
+                ret->veh=copy_veh[i];
+            }
+        }
+    }
+
+    return ret;
+}
+
 void *checkup_worker(void *arg)
 {
     int i, j, sock, lat, lng;
@@ -82,7 +141,6 @@ void *checkup_worker(void *arg)
     char addr_str[ADDR_STR_LEN];
 
     memset(&zero_veh, 0, length);
-
     for (;;)
     {
         sleep(CHECKUP_INTERVAL);
@@ -125,9 +183,14 @@ void usage()
     printf("Usage: ./server [port]\n");
 }
 
+void reset_log(int index)
+{
+    FILE *f=open_log(index, "w");
+    close_log(f, index);
+}
+
 /* MESSAGE HANDLERS */
 
-//TODO add resetting the log file here
 int comm_register_handler(uint32_t *msg, uint32_t *response)
 {
     printf("Got register request\n");
@@ -156,6 +219,7 @@ int comm_register_handler(uint32_t *msg, uint32_t *response)
     else
     {
         veh[empty_index] = veh_addr;
+        reset_log(empty_index);
         response[1] = htonl(COMM_SUCCESS);
     }
     PTHREAD_MUTEX_UNLOCK_ERR(&mutex);
@@ -223,12 +287,55 @@ int comm_get_log_handler(uint32_t *msg, uint32_t *response)
 int comm_req_compute_handler(uint32_t *msg, uint32_t *response)
 {
     printf("Got compute request\n");
+    uint32_t i;
+    for(i=0;i<MAX_COMPUTATIONS;i++)
+        if(comp_slots[i]==true)
+            break;
+    if(i==MAX_COMPUTATIONS)
+    {
+        response[1]=htonl(COMM_COMPUTATIONS_FULL);
+    }else
+    {
+        pthread_create(&comps[i], NULL, compute_worker, NULL);
+        comp_slots[i]=false;
+        response[0]=htonl(3);
+        response[1]=htonl(COMM_COMPUTATION_TOKEN);
+        response[2]=htonl(i);
+    }
     return 0;
 }
 
 int comm_get_compute_handler(uint32_t *msg, uint32_t *response)
 {
     printf("Got compute result request");
+
+    uint32_t token=ntohl(msg[2]);
+    if(token>=MAX_COMPUTATIONS || comp_slots[token]==true)
+    {
+        response[1]=htonl(COMM_NO_COMPUTATION);
+        return 0;
+    }
+    struct comp_result *res;
+    if(pthread_tryjoin_np(comps[token], (void**)&res)!=0);
+    {
+        if(errno==EBUSY)
+        {
+            response[1]=htonl(COMM_COMPUTING);
+            return 0;
+        }else
+        {
+            //TODO some proper error handling here
+            response[1]=htonl(COMM_FAILURE);
+            return 0;
+        }
+    }
+
+    response[0]=htonl(5);
+    response[1]=htonl(COMM_COMPUTATION_RESULT);
+    response[2]=htonl(res->veh.sin_addr.s_addr);
+    response[3]=htons(res->veh.sin_port);
+    response[4]=htonl((uint32_t)res->distance);
+
     return 0;
 }
 /* END OF MESSAGE HANDLERS */
@@ -316,7 +423,7 @@ void init_mutexes()
 
 int main(int argc, char const *argv[])
 {
-    int port, socket;
+    int port, socket,i;
     pthread_t checkup;
 
     if ((port = port_from_args(argc, argv)) < 0)
@@ -327,7 +434,13 @@ int main(int argc, char const *argv[])
             fprintf(stderr, "Invalid port number. Port must be between %d and %d.\n", MIN_PORT, MAX_PORT);
         return -1;
     }
+
+    /* Initializing static tables */
     memset(veh, 0, sizeof(struct sockaddr_in)*MAX_VEHICLES);
+    memset(comps, 0, sizeof(pthread_t)*MAX_COMPUTATIONS);
+    for(i=0;i<MAX_COMPUTATIONS;i++)
+        comp_slots[i]=true;
+
     init_mutexes();
     pthread_create(&checkup, NULL, checkup_worker, NULL);
 
