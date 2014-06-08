@@ -36,7 +36,7 @@ int search_veh(struct sockaddr_in v)
 
 
 
-FILE *open_log(int index, const char *mode)
+FILE *open_log(struct sockaddr_in veh_addr, int index, const char *mode)
 {
     if(index>=MAX_VEHICLES)
     {
@@ -50,9 +50,7 @@ FILE *open_log(int index, const char *mode)
     if (mkdir(LOG_DIR, S_IRWXU | S_IRWXG | S_IRWXO) != 0)
         if (errno != EEXIST)
             ERR("mkdir " LOG_DIR);
-    PTHREAD_MUTEX_LOCK_ERR(&mutex);
-    sockaddr_to_ip(addr_str,ADDR_STR_LEN, veh[index]);
-    PTHREAD_MUTEX_UNLOCK_ERR(&mutex);
+    sockaddr_to_ip(addr_str,ADDR_STR_LEN, veh_addr);
     snprintf(path, PATH_LEN, LOG_DIR "/%s", addr_str);
     PTHREAD_MUTEX_LOCK_ERR(&log_mutexes[index]);
     if((ret=fopen(path, mode))==NULL)
@@ -75,6 +73,7 @@ int close_log(FILE *f, int index)
 
 void *compute_worker(void *arg)
 {
+
     struct comp_result *ret=malloc(sizeof(struct comp_result));
     memset(&ret, 0, sizeof(ret));
     struct sockaddr_in copy_veh[MAX_VEHICLES];
@@ -94,7 +93,7 @@ void *compute_worker(void *arg)
     {
         if(sockaddr_cmp(copy_veh[i], zero_veh)!=0)
         {
-            FILE *f=open_log(i, "r");
+            FILE *f=open_log(copy_veh[i],i, "r");
             if(f==NULL)
             {
                 if(errno==ENOENT)
@@ -132,6 +131,7 @@ void *compute_worker(void *arg)
 
 void *checkup_worker(void *arg)
 {
+
     int i, j, sock, lat, lng;
     FILE *logfile;
     struct sockaddr_in copy_veh[MAX_VEHICLES];
@@ -166,7 +166,7 @@ void *checkup_worker(void *arg)
                 lng = buf[2] + MIN_LONGITUDE;
 
                 /* Append to log */
-                if ((logfile = open_log(i,"a")) == NULL)
+                if ((logfile = open_log(copy_veh[i],i,"a")) == NULL)
                     ERR("open_log"); //TODO handle errors properly
                 fprintf(logfile, "%d" LOG_SEPARATOR "%d\n", lat, lng);
                 close_log(logfile, i);
@@ -183,9 +183,9 @@ void usage()
     printf("Usage: ./server [port]\n");
 }
 
-void reset_log(int index)
+void reset_log(struct sockaddr_in veh_addr, int index)
 {
-    FILE *f=open_log(index, "w");
+    FILE *f=open_log(veh_addr, index, "w");
     close_log(f, index);
 }
 
@@ -219,7 +219,7 @@ int comm_register_handler(uint32_t *msg, uint32_t *response)
     else
     {
         veh[empty_index] = veh_addr;
-        reset_log(empty_index);
+        reset_log(veh[empty_index], empty_index);
         response[1] = htonl(COMM_SUCCESS);
     }
     PTHREAD_MUTEX_UNLOCK_ERR(&mutex);
@@ -261,7 +261,7 @@ int comm_get_log_handler(uint32_t *msg, uint32_t *response)
     else
     {
         FILE *logfile;
-        if((logfile=open_log(i,"r"))==NULL)
+        if((logfile=open_log(veh_addr, i,"r"))==NULL)
         {
             response[1]=htonl(COMM_FAILURE);
         }else
