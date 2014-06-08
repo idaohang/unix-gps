@@ -75,6 +75,8 @@ int main(int argc, char const *argv[])
     uint32_t msg[MAX_MESSAGE_LENGTH];
     uint32_t response[MAX_MESSAGE_LENGTH];
     uint32_t temp;
+    char addr_str[ADDR_STR_LEN];
+    struct sockaddr_in temp_addr;
 
     /* Parse the command */
     if (strcmp(command, "reg") == 0)
@@ -143,35 +145,54 @@ int main(int argc, char const *argv[])
 		case COMM_SUCCESS:
 		printf("Operation successful!\n");
 		break;
+
 		case COMM_FAILURE:
 		printf("Operation unsuccessful. Something went wrong.\n");
 		break;
+
 		case COMM_VEH_EXISTS:
 		printf("Vehicle already registered.\n");
 		break;
+
 		case COMM_VEH_NEXISTS:
 		printf("Vehicle not registered.\n");
 		break;
+
 		case COMM_LOG:
 		printf("Got log:\n");
 		print_log_msg(response);
 		break;
+
 		case COMM_NO_COMPUTATION:
 		printf("No computation with this token or somebody"
 			"already retrieved the result.\n");
 		break;
+
 		case COMM_FULL:
 		printf("Can't register, full house.\n");
         break;
+
         case COMM_COMPUTATIONS_FULL:
         printf("Computations service at full load, try again later.\n");
         break;
+
         case COMM_COMPUTATION_TOKEN:
         temp=ntohl(response[2]);
         printf("Computation request posted successfully!\n");
         printf("Your token is: %" PRIu32 "\n", temp);
         printf("Please use this token to retrieve your result.\n");
         break;
+
+        case COMM_COMPUTATION_RESULT:
+        printf("Longest distance was traversed by vehicle with address: ");
+        memset(&temp_addr, 0, sizeof(struct sockaddr_in));
+        temp_addr.sin_addr.s_addr=ntohl(response[2]);
+        temp_addr.sin_port=ntohs(response[3]);
+        sockaddr_to_ip(addr_str, ADDR_STR_LEN, temp_addr);
+        printf("%s\n", addr_str);
+        printf("Distance traversed: about %d\n", ntohl(response[4]));
+        break;
+
 		default:
 		sprintmsg(msg_str, 200, response, 10);
 		printf("Got unrecognized message.\n"
