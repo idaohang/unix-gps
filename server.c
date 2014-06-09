@@ -75,7 +75,7 @@ void *compute_worker(void *arg)
 {
 
     struct comp_result *ret=malloc(sizeof(struct comp_result));
-    memset(&ret, 0, sizeof(ret));
+    memset(ret, 0, sizeof(struct comp_result));
     struct sockaddr_in copy_veh[MAX_VEHICLES];
     struct sockaddr_in zero_veh;
     memset(&zero_veh, 0, sizeof(ret));
@@ -93,6 +93,7 @@ void *compute_worker(void *arg)
     {
         if(sockaddr_cmp(copy_veh[i], zero_veh)!=0)
         {
+            printf("Processing vehicle\n"); //DEBUG
             FILE *f=open_log(copy_veh[i],i, "r");
             if(f==NULL)
             {
@@ -106,8 +107,10 @@ void *compute_worker(void *arg)
                     return NULL;
             }
             double curr_distance=0;
+            ret->distance=0;
             int lat_last=0, lng_last=0;
 
+            printf("Processing log\n"); //DEBUG
             /* Process the vehicle log */
             if(fgets(line, LOG_LINE_LEN, f)==NULL)
                 continue;
@@ -117,12 +120,18 @@ void *compute_worker(void *arg)
                 sscanf(line, "%d" LOG_SEPARATOR "%d", &lat, &lng);
                 curr_distance+=sqrt(pow(lat-lat_last,2)+pow(lng-lng_last,2));
             }
+            printf("Closing log\n"); //DEBUG
             close_log(f,i);
-            if(curr_distance>ret->distance)
+            printf("Log closed\n"); //DEBUG
+            if(curr_distance>(ret->distance))
             {
+                printf("First line\n"); //DEBUG
                 ret->distance=curr_distance;
+                printf("Second line\n"); //DEBUG
                 ret->veh=copy_veh[i];
             }
+
+            printf("Finishing processing log\n"); //DEBUG
         }
     }
 
@@ -307,7 +316,7 @@ int comm_req_compute_handler(uint32_t *msg, uint32_t *response)
 
 int comm_get_compute_handler(uint32_t *msg, uint32_t *response)
 {
-    printf("Got compute result request");
+    printf("Got compute result request\n");
 
     uint32_t token=ntohl(msg[2]);
     if(token>=MAX_COMPUTATIONS || comp_slots[token]==true)
@@ -316,7 +325,7 @@ int comm_get_compute_handler(uint32_t *msg, uint32_t *response)
         return 0;
     }
     struct comp_result *res;
-    if(pthread_tryjoin_np(comps[token], (void**)&res)!=0);
+    if((errno=pthread_tryjoin_np(comps[token], (void**)&res))!=0);
     {
         if(errno==EBUSY)
         {
@@ -324,17 +333,21 @@ int comm_get_compute_handler(uint32_t *msg, uint32_t *response)
             return 0;
         }else
         {
-            //TODO some proper error handling here
+            ERR("pthread_tryjoin_np");
             response[1]=htonl(COMM_FAILURE);
             return 0;
         }
     }
+
+    comp_slots[token]=true;
 
     response[0]=htonl(5);
     response[1]=htonl(COMM_COMPUTATION_RESULT);
     response[2]=htonl(res->veh.sin_addr.s_addr);
     response[3]=htons(res->veh.sin_port);
     response[4]=htonl((uint32_t)res->distance);
+
+    free(res);
 
     return 0;
 }
