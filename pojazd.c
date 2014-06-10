@@ -5,9 +5,9 @@
 int pos[2];
 pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 
-void usage()
+void usage(int argc, char const *argv[])
 {
-    printf("Usage: ./pojazd [port]\n");
+    fprintf(stderr, "Usage: ./%s [port]\n",argv[0]);
 }
 
 void *move_worker(void *arg)
@@ -44,7 +44,7 @@ int main(int argc, char const *argv[])
     if((port=port_from_args(argc, argv))<0)
     {
         if(port==-1)
-            usage();
+            usage(argc, argv);
         else if(port==-2)
             fprintf(stderr, "Invalid port number. Port must be between %d and %d.\n", MIN_PORT, MAX_PORT);
         return -1;

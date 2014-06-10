@@ -44,11 +44,13 @@ int send_and_recv(int sock, struct sockaddr_in addr, uint32_t *msg, uint32_t *re
         ERR("bulk_write");
     /* Waiting for response */
     read = bulk_read(sock, response, UINT32_S);
-    if (read == 0)
+    if (read <= 0)
     {
-        fprintf(stderr, "Server closed connection without response.\n");
+        if(read==0)
+            fprintf(stderr, "Server closed connection without response.\n");
         return -1;
-    }
+    } 
+
 
     count = ntohl(response[0]);
     if (count > 1 && count <= MAX_MESSAGE_LENGTH)
@@ -220,7 +222,7 @@ int main(int argc, char const *argv[])
         break;
 
     case COMM_NO_COMPUTATION:
-        printf("No computation with this token or somebody"
+        printf("No computation with this token or somebody "
                "already retrieved the result.\n");
         break;
 
