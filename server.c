@@ -325,7 +325,7 @@ int comm_get_compute_handler(uint32_t *msg, uint32_t *response)
         return 0;
     }
     struct comp_result *res;
-    if((errno=pthread_tryjoin_np(comps[token], (void**)&res))!=0);
+    if((errno=pthread_tryjoin_np(comps[token], (void**)&res))!=0)
     {
         if(errno==EBUSY)
         {
