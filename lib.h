@@ -68,6 +68,8 @@
 
 #define UINT32_S sizeof(int32_t)
 
+ssize_t bulk_read(int fd, void *buf, size_t count);
+ssize_t bulk_write(int fd, const void *buf, size_t count);
 int sethandler(void (*f)(int), int sigNo);
 int make_socket(int domain, int type);
 int bind_inet_socket(uint16_t port, int type, int active);
@@ -77,7 +79,8 @@ char *addrtostr(struct sockaddr_in addr, char *buf, size_t size);
 void print_log(char *name, const char *format, ... );
 void close_conn(int socket);
 int sprintmsg(char *str, size_t size, uint32_t *msg, uint32_t count);
-struct sockaddr_in ip_to_sockaddr(const char* address, size_t size);
+int ip_to_sockaddr(const char* address, size_t size, struct sockaddr_in *addr);
 void sockaddr_to_ip(char* str, size_t size, struct sockaddr_in address);
 int sockaddr_cmp(struct sockaddr_in a, struct sockaddr_in b);
 struct sockaddr_in sockaddr_create(uint32_t ip, uint16_t port);
+void sleep_solid(unsigned int seconds);

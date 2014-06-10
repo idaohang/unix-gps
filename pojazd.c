@@ -14,12 +14,11 @@ void *move_worker(void *arg)
 {
     for (;;)
     {
-        sleep(MOVE_INTERVAL);
+        sleep_solid(MOVE_INTERVAL);
         PTHREAD_MUTEX_LOCK_ERR(&mutex);
         pos[0] += randb(-2, 2);
         pos[1] += randb(-2, 2);
 
-        /* Synchronize this */
         printf("%d, %d\n",pos[0],pos[1]);
         
         PTHREAD_MUTEX_UNLOCK_ERR(&mutex);
@@ -54,17 +53,21 @@ int main(int argc, char const *argv[])
     pos[0] = randb(MIN_LATITUDE, MAX_LATITUDE);
     pos[1] = randb(MIN_LONGITUDE, MAX_LONGITUDE);
 
-    /* Launching thread for changing position */
-    pthread_create(&t, NULL, move_worker, NULL);
-
+    printf("Binding socket on port %d...\n", port);
     socket = bind_inet_socket(port, SOCK_STREAM,0);
+    printf("Socket bound\n");
+
+    /* Launching thread for changing position */
+    if((errno=pthread_create(&t, NULL, move_worker, NULL))!=0)
+        ERR("pthread_create");
+
 
     for(;;)
     {
     	client=accept(socket, NULL,NULL);
         printf("Connection accepted!\n");
         prepare_packet(buf);
-        write(client, buf, sizeof(buf));
+        bulk_write(client, buf, sizeof(buf));
         close_conn(client);
         printf("Sent successfully.\n");
         close(client);
