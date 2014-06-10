@@ -1,5 +1,35 @@
 #include "lib.h"
 
+ssize_t bulk_read(int fd, void *buf, size_t count){
+    int c;
+    size_t len=0;
+    do{
+        c=read(fd,buf,count);
+        if(c<0){
+            if(EINTR==errno) continue;
+            return c;
+        }
+        if(0==c) return len;
+        buf+=c;
+        len+=c;
+        count-=c;
+    }while(count>0);
+    return len ;
+}
+
+ssize_t bulk_write(int fd, const void *buf, size_t count){
+    int c;
+    size_t len=0;
+    do{
+        c=TEMP_FAILURE_RETRY(write(fd,buf,count));
+        if(c<0) return c;
+        buf+=c;
+        len+=c;
+        count-=c;
+    }while(count>0);
+    return len ;
+}
+
 int sethandler( void (*f)(int), int sigNo)
 {
     struct sigaction act;
@@ -86,7 +116,8 @@ void print_log(char *name, const char *format, ... )
     time_t t = time(NULL);
     struct tm tm = *localtime(&t);
     struct timeval tv;
-    gettimeofday(&tv, NULL);
+    if(gettimeofday(&tv, NULL)!=0)
+        ERR("gettimeofday");
 
     fprintf(f, "[%d](%d:%d:%d.%ld): ", getpid(), tm.tm_hour, tm.tm_min,
             tm.tm_sec, (tv.tv_usec / 1000));
@@ -97,12 +128,19 @@ void print_log(char *name, const char *format, ... )
 
     fprintf(f, "\n");
 
-    fclose(f);
+    if(fclose(f)!=0)
+        ERR("fclose");
 }
 
 void close_conn(int socket)
 {
-    shutdown(socket, SHUT_WR);
+    if(shutdown(socket, SHUT_WR)!=0)
+    {
+        if(errno==ENOTCONN)
+            fprintf(stderr, "WARN Attempted to shutdown non-connected socket\n");
+        else
+            ERR("shutdown");
+    }
     while (read(socket, NULL, 0) != 0);
 }
 
@@ -122,31 +160,36 @@ int sprintmsg(char *str, size_t size, uint32_t *msg, uint32_t count)
     int i, cur = 0;
     for (i = 0; i < count; i++)
         cur += snprintf(str + cur, size - cur, "%" PRIu32 ":", ntohl(msg[i]));
-    if(len>count)
+    if (len > count)
         snprintf(str + cur, size - cur, "...");
     return 0;
 }
 
 /* Converts ddd.ddd.ddd.ddd:port to sockaddr */
-struct sockaddr_in ip_to_sockaddr(const char *address, size_t size)
+int ip_to_sockaddr(const char *address, size_t size, struct sockaddr_in *addr)
 {
-    struct sockaddr_in ret;
-    char *ip = malloc(size);
+    char *ip;
+    if((ip=malloc(size))==NULL)
+        ERR("malloc");
     char port_str[6];
     uint16_t port;
-
     strncpy(ip, address, size);
-    char *delim = strtok(ip, ":");
-    delim=strtok(NULL, ":");
+    char *delim;
+    if((delim = strtok(ip, ":"))==NULL)
+        return -1;
+    if((delim = strtok(NULL, ":"))==NULL)
+        return -1;
     strncpy(port_str, delim, 6);
-    sscanf(port_str, "%" SCNu16 "", &port);
+    if(sscanf(port_str, "%" SCNu16 "", &port)<1)
+        return -1;
 
-    memset(&ret, 0, sizeof(struct sockaddr_in));
-    ret.sin_family = AF_INET;
-    ret.sin_port = htons(port);
-    inet_aton(ip, &(ret.sin_addr));
+    memset(addr, 0, sizeof(struct sockaddr_in));
+    addr->sin_family = AF_INET;
+    addr->sin_port = htons(port);
+    if(inet_aton(ip, &(addr->sin_addr))==0)
+        return -1;
     free(ip);
-    return ret;
+    return 0;
 }
 
 /* Converts sockaddr to ddd.ddd.ddd.ddd:port */
@@ -160,10 +203,10 @@ void sockaddr_to_ip(char *str, size_t size, struct sockaddr_in address)
 
 int sockaddr_cmp(struct sockaddr_in a, struct sockaddr_in b)
 {
-    if(a.sin_family==b.sin_family &&
-        a.sin_port==b.sin_port &&
-        a.sin_addr.s_addr==b.sin_addr.s_addr&&
-        memcmp(a.sin_zero, b.sin_zero, 8)==0)
+    if (a.sin_family == b.sin_family &&
+            a.sin_port == b.sin_port &&
+            a.sin_addr.s_addr == b.sin_addr.s_addr &&
+            memcmp(a.sin_zero, b.sin_zero, 8) == 0)
         return 0;
     else
         return -1;
@@ -173,8 +216,18 @@ struct sockaddr_in sockaddr_create(uint32_t ip, uint16_t port)
 {
     struct sockaddr_in ret;
     memset(&ret, 0, sizeof(ret));
-    ret.sin_family=AF_INET;
-    ret.sin_port=port;
-    ret.sin_addr.s_addr=ip;
+    ret.sin_family = AF_INET;
+    ret.sin_port = port;
+    ret.sin_addr.s_addr = ip;
     return ret;
+}
+
+void sleep_solid(unsigned int seconds)
+{
+    unsigned int left = seconds;
+    do
+    {
+        left = sleep(left);
+    }
+    while (left > 0);
 }
