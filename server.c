@@ -38,7 +38,7 @@ int search_veh(struct sockaddr_in v)
 
 FILE *open_log(struct sockaddr_in veh_addr, int index, const char *mode)
 {
-    if(index>=MAX_VEHICLES)
+    if (index >= MAX_VEHICLES)
     {
         fprintf(stderr, "Tried to access invalid index %d\n", index);
         exit(-1);
@@ -50,12 +50,12 @@ FILE *open_log(struct sockaddr_in veh_addr, int index, const char *mode)
     if (mkdir(LOG_DIR, S_IRWXU | S_IRWXG | S_IRWXO) != 0)
         if (errno != EEXIST)
             ERR("mkdir " LOG_DIR);
-    sockaddr_to_ip(addr_str,ADDR_STR_LEN, veh_addr);
+    sockaddr_to_ip(addr_str, ADDR_STR_LEN, veh_addr);
     snprintf(path, PATH_LEN, LOG_DIR "/%s", addr_str);
-    PTHREAD_MUTEX_LOCK_ERR(&log_mutexes[index]);
-    if((ret=fopen(path, mode))==NULL)
+    //PTHREAD_MUTEX_LOCK_ERR(&log_mutexes[index]);
+    if ((ret = fopen(path, mode)) == NULL)
     {
-        PTHREAD_MUTEX_UNLOCK_ERR(&log_mutexes[index]);
+        //PTHREAD_MUTEX_UNLOCK_ERR(&log_mutexes[index]);
         return NULL;
     }
     else
@@ -66,7 +66,7 @@ FILE *open_log(struct sockaddr_in veh_addr, int index, const char *mode)
 
 int close_log(FILE *f, int index)
 {
-    PTHREAD_MUTEX_UNLOCK_ERR(&log_mutexes[index]);
+    //PTHREAD_MUTEX_UNLOCK_ERR(&log_mutexes[index]);
     return fclose(f);
 }
 
@@ -74,13 +74,13 @@ void *compute_worker(void *arg)
 {
 
     struct comp_result *ret;
-    if((ret=malloc(sizeof(struct comp_result)))==NULL)
+    if ((ret = malloc(sizeof(struct comp_result))) == NULL)
         ERR("malloc");
     memset(ret, 0, sizeof(struct comp_result));
     struct sockaddr_in copy_veh[MAX_VEHICLES];
     struct sockaddr_in zero_veh;
     memset(&zero_veh, 0, sizeof(ret));
-    int length=sizeof(struct sockaddr_in);
+    int length = sizeof(struct sockaddr_in);
 
     /* Create a local copy of the vehicle table */
     PTHREAD_MUTEX_LOCK_ERR(&mutex);
@@ -90,14 +90,14 @@ void *compute_worker(void *arg)
     /* Iterate through the table */
     int i, lat, lng;
     char line[LOG_LINE_LEN];
-    for(i=0; i<MAX_VEHICLES; i++)
+    for (i = 0; i < MAX_VEHICLES; i++)
     {
-        if(sockaddr_cmp(copy_veh[i], zero_veh)!=0)
+        if (sockaddr_cmp(copy_veh[i], zero_veh) != 0)
         {
-            FILE *f=open_log(copy_veh[i],i, "r");
-            if(f==NULL)
+            FILE *f = open_log(copy_veh[i], i, "r");
+            if (f == NULL)
             {
-                if(errno==ENOENT)
+                if (errno == ENOENT)
                 {
                     /* The vehicle was probably removed
                        in the meantime */
@@ -108,27 +108,37 @@ void *compute_worker(void *arg)
                     ERR("open_log");
                 }
             }
-            double curr_distance=0;
-            ret->distance=0;
-            int lat_last=0, lng_last=0;
+            double curr_distance = 0;
+            int lat_last = 0, lng_last = 0;
 
             /* Process the vehicle log */
-            if(fgets(line, LOG_LINE_LEN, f)==NULL)
+            PTHREAD_MUTEX_LOCK_ERR(&log_mutexes[i]);
+            if (fgets(line, LOG_LINE_LEN, f) == NULL)
+            {
+                PTHREAD_MUTEX_UNLOCK_ERR(&log_mutexes[i]);
                 continue;
+            }
+            PTHREAD_MUTEX_UNLOCK_ERR(&log_mutexes[i])
             sscanf(line, "%d" LOG_SEPARATOR "%d", &lat_last, &lng_last);
             int scanned;
-            while(fgets(line, LOG_LINE_LEN, f)!=NULL)
+            PTHREAD_MUTEX_LOCK_ERR(&log_mutexes[i]);
+            while (fgets(line, LOG_LINE_LEN, f) != NULL)
             {
-                if((scanned=sscanf(line, "%d" LOG_SEPARATOR "%d", &lat, &lng))!=2)
+                PTHREAD_MUTEX_UNLOCK_ERR(&log_mutexes[i]);
+                if ((scanned = sscanf(line, "%d" LOG_SEPARATOR "%d", &lat, &lng)) != 2)
                     break;
-                curr_distance+=sqrt(pow(lat-lat_last,2)+pow(lng-lng_last,2));
+                curr_distance += sqrt(pow(lat - lat_last, 2) + pow(lng - lng_last, 2));
+                lat_last=lat;
+                lng_last=lng;
+                PTHREAD_MUTEX_LOCK_ERR(&log_mutexes[i]);
             }
-            if(close_log(f,i)!=0)
+            PTHREAD_MUTEX_UNLOCK_ERR(&log_mutexes[i]);
+            if (close_log(f, i) != 0)
                 ERR("close_log");
-            if(curr_distance>(ret->distance))
+            if (curr_distance > (ret->distance))
             {
-                ret->distance=curr_distance;
-                ret->veh=copy_veh[i];
+                ret->distance = curr_distance;
+                ret->veh = copy_veh[i];
             }
         }
     }
@@ -166,7 +176,7 @@ void *checkup_worker(void *arg)
                 sock = bind_inet_socket(0, SOCK_STREAM, 1);
                 sockaddr_to_ip(addr_str, MSG_DISP_LEN, copy_veh[i]);
                 printf("Connecting to %s ...\n", addr_str);
-                if(connect(sock, &copy_veh[i], length))
+                if (connect(sock, &copy_veh[i], length))
                 {
                     fprintf(stderr, "WARN Could not connect to %s\n", addr_str);
                     continue;
@@ -174,13 +184,13 @@ void *checkup_worker(void *arg)
 
                 /* Get the coords */
                 int bytes_read;
-                if((bytes_read=bulk_read(sock, buf, UINT32_S * 3))<=0)
+                if ((bytes_read = bulk_read(sock, buf, UINT32_S * 3)) <= 0)
                 {
-                    if(bytes_read==0)
+                    if (bytes_read == 0)
                         fprintf(stderr, "WARN no message from %s\n", addr_str);
                     continue;
                 }
-                if(close(sock)!=0)
+                if (close(sock) != 0)
                     ERR("close");
 
                 /* Process the coords */
@@ -189,18 +199,20 @@ void *checkup_worker(void *arg)
                 lat = buf[1] + MIN_LATITUDE;
                 lng = buf[2] + MIN_LONGITUDE;
 
-                if(lat<MIN_LATITUDE||lat>MAX_LATITUDE||
-                    lng<MIN_LONGITUDE||lng>MAX_LONGITUDE)
+                if (lat < MIN_LATITUDE || lat > MAX_LATITUDE ||
+                        lng < MIN_LONGITUDE || lng > MAX_LONGITUDE)
                 {
                     fprintf(stderr, "WARN got invalid coords from %s\n", addr_str);
                     continue;
                 }
 
                 /* Append to log */
-                if ((logfile = open_log(copy_veh[i],i,"a")) == NULL)
+                if ((logfile = open_log(copy_veh[i], i, "a")) == NULL)
                     ERR("open_log");
+                PTHREAD_MUTEX_LOCK_ERR(&log_mutexes[i]);
                 fprintf(logfile, "%d" LOG_SEPARATOR "%d\n", lat, lng);
-                if(close_log(logfile, i)!=0)
+                PTHREAD_MUTEX_UNLOCK_ERR(&log_mutexes[i]);
+                if (close_log(logfile, i) != 0)
                     ERR("close_log");
 
                 printf("Coords retrieved: %d, %d\n", lat, lng);
@@ -212,16 +224,18 @@ void *checkup_worker(void *arg)
 
 void usage(int argc, char const *argv[])
 {
-    printf("Usage: ./%s [port]\n",argv[0]);
+    printf("Usage: ./%s [port]\n", argv[0]);
 }
 
 void reset_log(struct sockaddr_in veh_addr, int index)
 {
     FILE *f;
-    if((f=open_log(veh_addr, index, "w"))==NULL)
+    PTHREAD_MUTEX_LOCK_ERR(&log_mutexes[index]);
+    if ((f = open_log(veh_addr, index, "w")) == NULL)
         ERR("open_log");
-    if(close_log(f, index)!=0)
+    if (close_log(f, index) != 0)
         ERR("close_log");
+    PTHREAD_MUTEX_UNLOCK_ERR(&log_mutexes[index]);
 }
 
 /* MESSAGE HANDLERS */
@@ -296,28 +310,33 @@ int comm_get_log_handler(uint32_t *msg, uint32_t *response)
     else
     {
         FILE *logfile;
-        if((logfile=open_log(veh_addr, i,"r"))==NULL)
+        if ((logfile = open_log(veh_addr, i, "r")) == NULL)
         {
             char addr_str[ADDR_STR_LEN];
             sockaddr_to_ip(addr_str, ADDR_STR_LEN, veh_addr);
             fprintf(stderr, "WARN No log exists for vehicle %s\n", addr_str);
-            response[1]=htonl(COMM_FAILURE);
-        }else
+            response[1] = htonl(COMM_FAILURE);
+        }
+        else
         {
-            pos=2;
-            while(pos<MAX_MESSAGE_LENGTH-1&&
-                (fgets(line, LOG_LINE_LEN, logfile)!=NULL))
+            pos = 2;
+            PTHREAD_MUTEX_LOCK_ERR(&log_mutexes[i]);
+            while (pos < MAX_MESSAGE_LENGTH - 1 &&
+                    (fgets(line, LOG_LINE_LEN, logfile) != NULL))
             {
-                if(sscanf(line, "%d" LOG_SEPARATOR "%d", &lat, &lng)!=2)
+                PTHREAD_MUTEX_UNLOCK_ERR(&log_mutexes[i]);
+                if (sscanf(line, "%d" LOG_SEPARATOR "%d", &lat, &lng) != 2)
                     break;
-                response[pos]=htonl(lat-MIN_LATITUDE);
-                response[pos+1]=htonl(lng-MIN_LONGITUDE);
-                pos+=2;
+                response[pos] = htonl(lat - MIN_LATITUDE);
+                response[pos + 1] = htonl(lng - MIN_LONGITUDE);
+                pos += 2;
+                PTHREAD_MUTEX_LOCK_ERR(&log_mutexes[i]);
             }
-            if(close_log(logfile, i)!=0)
+            PTHREAD_MUTEX_UNLOCK_ERR(&log_mutexes[i]);
+            if (close_log(logfile, i) != 0)
                 ERR("close_log");
-            response[0]=htonl(pos);
-            response[1]=htonl(COMM_LOG);
+            response[0] = htonl(pos);
+            response[1] = htonl(COMM_LOG);
         }
     }
     return 0;
@@ -327,19 +346,20 @@ int comm_req_compute_handler(uint32_t *msg, uint32_t *response)
 {
     printf("Got compute request\n");
     uint32_t i;
-    for(i=0;i<MAX_COMPUTATIONS;i++)
-        if(comp_slots[i]==true)
+    for (i = 0; i < MAX_COMPUTATIONS; i++)
+        if (comp_slots[i] == true)
             break;
-    if(i==MAX_COMPUTATIONS)
+    if (i == MAX_COMPUTATIONS)
     {
-        response[1]=htonl(COMM_COMPUTATIONS_FULL);
-    }else
+        response[1] = htonl(COMM_COMPUTATIONS_FULL);
+    }
+    else
     {
         pthread_create(&comps[i], NULL, compute_worker, NULL);
-        comp_slots[i]=false;
-        response[0]=htonl(3);
-        response[1]=htonl(COMM_COMPUTATION_TOKEN);
-        response[2]=htonl(i);
+        comp_slots[i] = false;
+        response[0] = htonl(3);
+        response[1] = htonl(COMM_COMPUTATION_TOKEN);
+        response[2] = htonl(i);
     }
     return 0;
 }
@@ -348,32 +368,33 @@ int comm_get_compute_handler(uint32_t *msg, uint32_t *response)
 {
     printf("Got compute result request\n");
 
-    uint32_t token=ntohl(msg[2]);
-    if(token>=MAX_COMPUTATIONS || comp_slots[token]==true)
+    uint32_t token = ntohl(msg[2]);
+    if (token >= MAX_COMPUTATIONS || comp_slots[token] == true)
     {
-        response[1]=htonl(COMM_NO_COMPUTATION);
+        response[1] = htonl(COMM_NO_COMPUTATION);
         return 0;
     }
     struct comp_result *res;
-    if((errno=pthread_tryjoin_np(comps[token], (void**)&res))!=0)
+    if ((errno = pthread_tryjoin_np(comps[token], (void **)&res)) != 0)
     {
-        if(errno==EBUSY)
+        if (errno == EBUSY)
         {
-            response[1]=htonl(COMM_COMPUTING);
+            response[1] = htonl(COMM_COMPUTING);
             return 0;
-        }else
+        }
+        else
         {
             ERR("pthread_tryjoin_np");
         }
     }
 
-    comp_slots[token]=true;
+    comp_slots[token] = true;
 
-    response[0]=htonl(5);
-    response[1]=htonl(COMM_COMPUTATION_RESULT);
-    response[2]=htonl(res->veh.sin_addr.s_addr);
-    response[3]=htons(res->veh.sin_port);
-    response[4]=htonl((uint32_t)res->distance);
+    response[0] = htonl(5);
+    response[1] = htonl(COMM_COMPUTATION_RESULT);
+    response[2] = htonl(res->veh.sin_addr.s_addr);
+    response[3] = htons(res->veh.sin_port);
+    response[4] = htonl((uint32_t)res->distance);
 
     free(res);
 
@@ -386,7 +407,7 @@ int handle_msg(uint32_t *msg, uint32_t *response)
     uint32_t type = ntohl(msg[1]);
 
     char str[MSG_DISP_LEN];
-    if(sprintmsg(str, MSG_DISP_LEN, msg, 8)<0)
+    if (sprintmsg(str, MSG_DISP_LEN, msg, 8) < 0)
         fprintf(stderr, "Got message: cannot display\n");
     else
         printf("Received message: %s\n", str);
@@ -417,7 +438,7 @@ void do_work(int socket)
     uint32_t response[MAX_MESSAGE_LENGTH];
     uint32_t length;
     struct sockaddr_in addr;
-    socklen_t addr_size=sizeof(addr);
+    socklen_t addr_size = sizeof(addr);
     char addr_str[ADDR_STR_LEN];
 
     for (;;)
@@ -432,14 +453,15 @@ void do_work(int socket)
         response[1] = htonl(COMM_FAILURE);
 
         int bytes_read;
-        if((bytes_read=bulk_read(client, buf, UINT32_S))<=0)
+        if ((bytes_read = bulk_read(client, buf, UINT32_S)) <= 0)
         {
-            if(bytes_read==0)
+            if (bytes_read == 0)
             {
                 fprintf(stderr, "WARN Got nothing from %s\n", addr_str);
                 close_conn(client);
                 continue;
-            }else
+            }
+            else
             {
                 ERR("bulk_read");
             }
@@ -462,7 +484,7 @@ void do_work(int socket)
         }
         printf("Responding\n");
         length = ntohl(response[0]);
-        if(bulk_write(client, response, length * UINT32_S)<0)
+        if (bulk_write(client, response, length * UINT32_S) < 0)
             fprintf(stderr, "Error with writing\n");
         close_conn(client);
         printf("End of connection\n");
@@ -476,8 +498,8 @@ void init_mutexes()
     int i;
     for (i = 0; i < MAX_VEHICLES; i++)
     {
-        errno=pthread_mutex_init(&(log_mutexes[i]), NULL);
-        if(errno!=0)
+        errno = pthread_mutex_init(&(log_mutexes[i]), NULL);
+        if (errno != 0)
             ERR("pthread_mutex_init");
     }
     return;
@@ -485,7 +507,7 @@ void init_mutexes()
 
 int main(int argc, char const *argv[])
 {
-    int port, socket,i;
+    int port, socket, i;
     pthread_t checkup;
 
     if ((port = port_from_args(argc, argv)) < 0)
@@ -500,11 +522,11 @@ int main(int argc, char const *argv[])
     /* Initializing static tables */
     memset(veh, 0, sizeof(struct sockaddr_in)*MAX_VEHICLES);
     memset(comps, 0, sizeof(pthread_t)*MAX_COMPUTATIONS);
-    for(i=0;i<MAX_COMPUTATIONS;i++)
-        comp_slots[i]=true;
+    for (i = 0; i < MAX_COMPUTATIONS; i++)
+        comp_slots[i] = true;
 
     init_mutexes();
-    if((errno=pthread_create(&checkup, NULL, checkup_worker, NULL))!=0)
+    if ((errno = pthread_create(&checkup, NULL, checkup_worker, NULL)) != 0)
         ERR("pthread_create");
 
     printf("Binding socket on port %d...\n", port);
